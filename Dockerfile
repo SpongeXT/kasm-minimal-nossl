@@ -27,7 +27,8 @@ RUN mkdir -p /etc/kasmvnc \
 # Instead hook both the proxy and the terminal launcher into
 # vnc_startup.sh right after the `start_kasmvnc` call (sed insert, build
 # fails if the hook line is absent).
-RUN apt-get update -qq && apt-get install -y --no-install-recommends python3 xfce4-terminal xterm \
+RUN apt-get update -qq && apt-get install -y --no-install-recommends python3 xfce4-terminal xterm sudo \
+ && echo 'kasm-user ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/kasm-user && chmod 440 /etc/sudoers.d/kasm-user \
  && rm -rf /var/lib/apt/lists/* \
  && python3 --version \
  && which xfce4-terminal xterm

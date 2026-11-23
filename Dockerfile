@@ -27,14 +27,16 @@ RUN mkdir -p /etc/kasmvnc \
 # Instead hook both the proxy and the terminal launcher into
 # vnc_startup.sh right after the `start_kasmvnc` call (sed insert, build
 # fails if the hook line is absent).
-RUN apt-get update -qq && apt-get install -y --no-install-recommends python3 xfce4-terminal xterm sudo wmctrl xbindkeys \
+RUN apt-get update -qq && apt-get install -y --no-install-recommends python3 python3-tk xfce4-terminal xterm sudo wmctrl xbindkeys \
  && echo 'kasm-user ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/kasm-user && chmod 440 /etc/sudoers.d/kasm-user \
  && rm -rf /var/lib/apt/lists/* \
  && python3 --version \
+ && python3 -c "import tkinter; print('tk ok')" \
  && which xfce4-terminal xterm
 COPY desk_auth_proxy.py /usr/local/bin/desk_auth_proxy.py
 COPY terminal_launcher.sh /usr/local/bin/terminal_launcher.sh
-RUN chmod +x /usr/local/bin/desk_auth_proxy.py /usr/local/bin/terminal_launcher.sh \
+COPY term_button.py /usr/local/bin/term_button.py
+RUN chmod +x /usr/local/bin/desk_auth_proxy.py /usr/local/bin/terminal_launcher.sh /usr/local/bin/term_button.py \
  && sed -i 's#^start_kasmvnc$#start_kasmvnc\n(while true; do python3 /usr/local/bin/desk_auth_proxy.py; echo "desk-auth-proxy exited, restarting in 2s" >\&2; sleep 2; done) \&\n( /usr/local/bin/terminal_launcher.sh || true ) \&#' /dockerstartup/vnc_startup.sh \
  && grep -q 'desk_auth_proxy.py' /dockerstartup/vnc_startup.sh || { echo "proxy hook missing" >&2; exit 1; } \
  && grep -q 'terminal_launcher.sh' /dockerstartup/vnc_startup.sh || { echo "terminal hook missing" >&2; exit 1; } \

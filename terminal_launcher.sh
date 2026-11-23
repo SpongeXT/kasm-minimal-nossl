@@ -58,6 +58,13 @@ if command -v xbindkeys >/dev/null 2>&1; then
   done
   pgrep -x xbindkeys >/dev/null 2>&1 || echo "terminal-launcher: WARNING xbindkeys FAILED to stay running" >&2
 fi
+# On-screen "终端" button (top-right corner, always on top): tap it and a
+# terminal opens. No keyboard, no xbindkeys, no window manager needed.
+# Started here, after Chrome is up, so it lands on top of Chrome.
+if [ -x /usr/local/bin/term_button.py ]; then
+  pgrep -f term_button.py >/dev/null 2>&1 || (python3 /usr/local/bin/term_button.py >/tmp/term_button.log 2>&1 &)
+  echo "terminal-launcher: term button started" >&2
+fi
 # Compositor off + Ctrl+Alt+T binding via xfconf, best effort only
 # (xfconf may be absent in this image; xbindkeys above is the real shortcut).
 if command -v xfconf-query >/dev/null 2>&1; then

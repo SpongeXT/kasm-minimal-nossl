@@ -18,9 +18,9 @@
 # explicit config path and display, verbose logging, and a retry loop that
 # verifies with pgrep that it is actually still running. Also start
 # xfconfd first if present, so the xfconf shortcut binding can register
-# as a backup. And as a safety net, the terminal now auto-relaunches:
-# if it is closed, a new one opens ~2s later, so the desktop is never
-# left with no terminal even if the shortcut still fails.
+# as a backup. (Auto-relaunch was removed 2026-11-24 at Leon's request: with a
+# window manager the terminal can be minimized, and it reopens from the on-screen
+# button or Ctrl+Alt+T, so closing it no longer needs to bring it straight back.)
 # Why the keyboard did not reach the terminal (2026-11-24 09:04, Leon's report):
 # this image has no window manager, so clicking the terminal never moves keyboard
 # focus off Chrome — mouse works in the terminal, every keystroke goes to Chrome.
@@ -92,9 +92,10 @@ if command -v xfconf-query >/dev/null 2>&1; then
     sleep 3
   done
 fi
-# Terminal, with auto-relaunch: closing it opens a fresh one ~2s later.
-# This loop is the script's main foreground job; xbindkeys keeps running
-# in the background alongside it.
+# Terminal, opened once: no auto-relaunch (removed 2026-11-24 at Leon's request).
+# Closing it leaves Chrome clear; reopen with the "终端" button or Ctrl+Alt+T.
+# The launcher stays alive on `wait` so the background helpers (openbox,
+# xbindkeys, term button) keep running.
 if command -v xfce4-terminal >/dev/null 2>&1; then
   TERM_CMD="xfce4-terminal --geometry=100x28+40+40"
 elif command -v xterm >/dev/null 2>&1; then
@@ -103,18 +104,16 @@ else
   echo "terminal-launcher: no terminal found" >&2
   exit 1
 fi
-while true; do
-  $TERM_CMD &
-  TERM_PID=$!
-  sleep 3
-  if command -v wmctrl >/dev/null 2>&1; then
-    for i in 1 2 3 4 5 6; do
-      sleep 2
-      wmctrl -a Terminal 2>/dev/null && break
-      wmctrl -x -a xfce4-terminal.Xfce4-terminal 2>/dev/null && break
-    done
-  fi
-  wait $TERM_PID
-  echo "terminal-launcher: terminal exited, reopening in 2s" >&2
-  sleep 2
-done
+$TERM_CMD &
+TERM_PID=$!
+sleep 3
+if command -v wmctrl >/dev/null 2>&1; then
+  for i in 1 2 3 4 5 6; do
+    sleep 2
+    wmctrl -a Terminal 2>/dev/null && break
+    wmctrl -x -a xfce4-terminal.Xfce4-terminal 2>/dev/null && break
+  done
+fi
+wait $TERM_PID
+echo "terminal-launcher: terminal closed, not reopening" >&2
+wait

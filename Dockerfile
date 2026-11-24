@@ -21,18 +21,19 @@ RUN mkdir -p /etc/kasmvnc \
  && printf 'network:\n  ssl:\n    require_ssl: false\n' > /etc/kasmvnc/kasmvnc.yaml \
  && cat /etc/kasmvnc/kasmvnc.yaml
 # --- Terminal + login gate ---
-# python3 for the proxy, xfce4-terminal for Leon, xterm as a tiny fallback.
+# python3 for the proxy, xfce4-terminal for Leon, xterm as a tiny fallback,
+# openbox as the window manager (click-to-focus, title bar, Alt+Tab).
 # Do NOT overwrite /dockerstartup/custom_startup.sh — kasmweb/chrome ships
 # its own there (Chrome watchdog; replacing it breaks the desktop).
 # Instead hook both the proxy and the terminal launcher into
 # vnc_startup.sh right after the `start_kasmvnc` call (sed insert, build
 # fails if the hook line is absent).
-RUN apt-get update -qq && apt-get install -y --no-install-recommends python3 python3-tk xfce4-terminal xterm sudo wmctrl xbindkeys \
+RUN apt-get update -qq && apt-get install -y --no-install-recommends python3 python3-tk xfce4-terminal xterm sudo wmctrl xbindkeys openbox \
  && echo 'kasm-user ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/kasm-user && chmod 440 /etc/sudoers.d/kasm-user \
  && rm -rf /var/lib/apt/lists/* \
  && python3 --version \
  && python3 -c "import tkinter; print('tk ok')" \
- && which xfce4-terminal xterm
+ && which xfce4-terminal xterm openbox
 COPY desk_auth_proxy.py /usr/local/bin/desk_auth_proxy.py
 COPY terminal_launcher.sh /usr/local/bin/terminal_launcher.sh
 COPY term_button.py /usr/local/bin/term_button.py

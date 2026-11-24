@@ -21,6 +21,13 @@
 # as a backup. And as a safety net, the terminal now auto-relaunches:
 # if it is closed, a new one opens ~2s later, so the desktop is never
 # left with no terminal even if the shortcut still fails.
+# Why the keyboard did not reach the terminal (2026-11-24 09:04, Leon's report):
+# this image has no window manager, so clicking the terminal never moves keyboard
+# focus off Chrome — mouse works in the terminal, every keystroke goes to Chrome.
+# Fix: start openbox (tiny window manager) before opening the terminal. It gives
+# every window a title bar with minimize/maximize/close, click-to-focus and Alt+Tab.
+# With minimize working, Leon can minimize the terminal to browse; closing it still
+# auto-reopens (safety net).
 set -x
 if command -v /usr/bin/desktop_ready >/dev/null 2>&1; then
   /usr/bin/desktop_ready || true
@@ -37,6 +44,14 @@ cat > /home/kasm-user/.xbindkeysrc <<'EOF'
 EOF
 # Let Chrome come up first so it cannot cover the terminal afterwards.
 sleep 20
+# Window manager: without one, clicking the terminal never moves keyboard
+# focus off Chrome (mouse works, keys go to Chrome). openbox gives every
+# window a title bar, click-to-focus and Alt+Tab.
+if command -v openbox >/dev/null 2>&1; then
+  pgrep -x openbox >/dev/null 2>&1 || openbox &
+  sleep 2
+  echo "terminal-launcher: openbox started" >&2
+fi
 # Settings service, if present: without xfconfd running, xfconf-query
 # cannot connect and the xfconf shortcut binding never registers.
 if command -v xfconfd >/dev/null 2>&1; then
@@ -59,7 +74,7 @@ if command -v xbindkeys >/dev/null 2>&1; then
   pgrep -x xbindkeys >/dev/null 2>&1 || echo "terminal-launcher: WARNING xbindkeys FAILED to stay running" >&2
 fi
 # On-screen "终端" button (top-right corner, always on top): tap it and a
-# terminal opens. No keyboard, no xbindkeys, no window manager needed.
+# terminal opens. No keyboard needed — tap it and a terminal opens.
 # Started here, after Chrome is up, so it lands on top of Chrome.
 if [ -x /usr/local/bin/term_button.py ]; then
   pgrep -f term_button.py >/dev/null 2>&1 || (python3 /usr/local/bin/term_button.py >/tmp/term_button.log 2>&1 &)

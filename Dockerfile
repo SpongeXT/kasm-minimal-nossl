@@ -74,4 +74,16 @@ RUN chmod +x /usr/local/bin/desk_auth_proxy.py /usr/local/bin/terminal_launcher.
  && echo "terminal hook OK" \
  && echo "qinglong hook OK" \
  && grep -n 'desk_auth_proxy\|terminal_launcher\|qinglong_launcher' /dockerstartup/vnc_startup.sh || true
+# --- Chrome: add --disable-dev-shm-usage --disable-gpu to auto-start ---
+# /dev/shm is only 64M, heavy pages SIGTRAP without --disable-dev-shm-usage.
+# Idempotent: only add if not already present. Do not rewrite custom_startup.sh,
+# do not touch its while-true watchdog or DISABLE_CUSTOM_STARTUP check,
+# do not change --user-data-dir.
+RUN if ! grep -q 'google-chrome' /dockerstartup/custom_startup.sh; then echo "google-chrome line not found in custom_startup.sh" >&2; exit 1; fi \
+ && if ! grep -q 'disable-dev-shm-usage' /dockerstartup/custom_startup.sh; then sed -i 's/google-chrome/google-chrome --disable-dev-shm-usage --disable-gpu/' /dockerstartup/custom_startup.sh; fi \
+ && grep -q 'disable-dev-shm-usage' /dockerstartup/custom_startup.sh || { echo "disable-dev-shm-usage missing" >&2; exit 1; } \
+ && grep -q 'disable-gpu' /dockerstartup/custom_startup.sh || { echo "disable-gpu missing" >&2; exit 1; } \
+ && echo "chrome flags OK" \
+ && grep -n 'google-chrome' /dockerstartup/custom_startup.sh || true
+
 USER 1000

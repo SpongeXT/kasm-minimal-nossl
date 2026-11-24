@@ -101,6 +101,7 @@ node --version >&2
 # Keep it running with backoff and log rotation (fix 2).
 FAIL_COUNT=0
 while true; do
+  # 日志轮转（保留现有的 2 MiB 轮转逻辑）。
   if [ -f "$LOG_FILE" ]; then
     LOG_SIZE="$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)"
     if [ "$LOG_SIZE" -gt 2097152 ]; then
@@ -108,12 +109,18 @@ while true; do
       echo "qinglong-launcher: log rotated" >> "$LOG_FILE"
     fi
   fi
-  echo "qinglong-launcher: starting qinglong on :5700 (fail streak $FAIL_COUNT)" >> "$LOG_FILE"
+  # 监控模式：面板在跑就什么都不做。
+  if curl -fs -o /dev/null http://localhost:5700/ 2>/dev/null; then
+    FAIL_COUNT=0
+    sleep 60
+    continue
+  fi
+  # 面板掉了：跑一次启动脚本把它拉起来。
+  echo "qinglong-launcher: panel not listening, starting qinglong (fail streak $FAIL_COUNT)" >> "$LOG_FILE"
   START_TS="$(date +%s)"
   LISTENED=0
   qinglong >> "$LOG_FILE" 2>&1 &
   QL_PID=$!
-  # Wait up to 60s for the panel to listen, so success is visible in the log.
   for _i in $(seq 1 60); do
     if curl -fs -o /dev/null http://localhost:5700/ 2>/dev/null; then
       echo "qinglong-launcher: panel listening on :5700" >> "$LOG_FILE"
@@ -126,14 +133,14 @@ while true; do
   wait "$QL_PID"
   EXIT_CODE=$?
   ELAPSED=$(( $(date +%s) - START_TS ))
-  # Fix 5: only reset the streak if the panel actually listened and stayed
-  # up 60s+. A 14s run that exits non-zero is still a failure, not a success.
-  if [ "$LISTENED" -eq 1 ] && [ "$ELAPSED" -ge 60 ]; then
+  if [ "$LISTENED" -eq 1 ]; then
     FAIL_COUNT=0
   else
     FAIL_COUNT=$((FAIL_COUNT + 1))
   fi
-  if [ "$FAIL_COUNT" -ge 5 ]; then
+  if [ "$LISTENED" -eq 1 ]; then
+    SLEEP_SECS=5
+  elif [ "$FAIL_COUNT" -ge 5 ]; then
     SLEEP_SECS=60
   elif [ "$FAIL_COUNT" -ge 3 ]; then
     SLEEP_SECS=30
@@ -142,6 +149,6 @@ while true; do
   else
     SLEEP_SECS=5
   fi
-  echo "qinglong-launcher: qinglong exited code $EXIT_CODE after ${ELAPSED}s, retry in ${SLEEP_SECS}s" >> "$LOG_FILE"
+  echo "qinglong-launcher: wrapper exit=$EXIT_CODE after ${ELAPSED}s, listened=$LISTENED, retry in ${SLEEP_SECS}s" >> "$LOG_FILE"
   sleep "$SLEEP_SECS"
 done

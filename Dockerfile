@@ -30,12 +30,19 @@ RUN mkdir -p /etc/kasmvnc \
 # QingLong 2.24.0 npm package is verified on Node.js 20 and 24; panel and
 # script dependencies use pnpm 8.3.1. Installed as root at build time, runs
 # as kasm-user at runtime (no root needed: its scheduler is internal).
-RUN apt-get update -qq && apt-get install -y --no-install-recommends curl ca-certificates gnupg git python3-pip \
+# Also bake in every system tool the panel's startup script tries to
+# apt-install (build #11 failure: it needs nginx, and the sudo shim skips
+# the apt step, so anything not already in the image stays missing).
+# Note: nginx is installed so it exists, but as kasm-user it cannot bind
+# port 80 or write /var/log/nginx — the launcher shims `nginx` to a no-op
+# so the startup script's nginx step passes and the Node panel itself
+# listens on 5700 directly.
+RUN apt-get update -qq && apt-get install -y --no-install-recommends curl ca-certificates gnupg git python3-pip wget tzdata perl openssl jq nginx procps netcat-openbsd openssh-client \
  && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
  && node --version && npm --version \
  && npm install -g pnpm@8.3.1 @whyour/qinglong@2.24.0 \
- && which node npm pnpm qinglong \
+ && which node npm pnpm qinglong nginx jq wget perl openssl \
  && ls "$(npm root -g)/@whyour/qinglong" >/dev/null && echo "qinglong installed" \
  && pip3 install requests pycryptodome \
  && python3 -c "import requests, Crypto; print('py deps ok')" \

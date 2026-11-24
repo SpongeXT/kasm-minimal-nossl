@@ -21,10 +21,22 @@
 #    baked into the image) and runs any other command directly as the
 #    current user. The shim only affects this launcher's PATH, nothing else.
 # 2. The old launcher retried every 5s forever, so the log grew without
-#    bound (2079 lines in one run). Fix: backoff on fast failures
-#    (5s/15s/30s/60s) and rotate the log when it passes 2 MiB.
+#    bound (2079 lines in one run). Fix: backoff on failures and rotate
+#    the log when it passes 2 MiB.
 # 3. The old log in /data survives redeploy, so it starts full of the old
 #    sudo failures. Fix: trim it to the last 200 lines on startup.
+# Pitfalls fixed 2026-11-24 (build #11 failure):
+# 4. The startup script also requires `nginx` (it runs it before starting
+#    the panel service). The image had no nginx, so it died with exit 127
+#    every 14s. Fix: nginx is now baked into the image (Dockerfile), and
+#    the launcher also shims `nginx` to a no-op — as kasm-user it cannot
+#    bind port 80 or write /var/log/nginx, and the Node panel serves 5700
+#    directly, so the nginx step only needs to pass, not actually run.
+# 5. Backoff never engaged in build #11: every run took 14s, over the old
+#    10s "fast failure" threshold, so the streak reset to 0 each time and
+#    it retried every 5s forever. Fix: the streak now increments on every
+#    non-zero exit and only resets after the panel actually listened and
+#    stayed up 60s+; the threshold is 60s, not 10s.
 set -x
 export HOME=/home/kasm-user
 export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
@@ -45,6 +57,17 @@ esac
 exec "$@"
 SHIM_EOF
 chmod +x "$SHIM_DIR/sudo" 2>/dev/null || true
+# --- nginx shim (fix 4) ---
+# The startup script runs nginx before the panel service, but as kasm-user
+# nginx cannot bind port 80 or write its pid/log files, and the Node panel
+# serves 5700 directly — so this step only needs to pass, not actually run.
+# Real nginx is still baked into the image (Dockerfile) for manual use.
+cat > "$SHIM_DIR/nginx" <<'NGINX_EOF'
+#!/bin/sh
+echo "ql-nginx-shim: skipping nginx $*" >&2
+exit 0
+NGINX_EOF
+chmod +x "$SHIM_DIR/nginx" 2>/dev/null || true
 export PATH="$SHIM_DIR:$PATH"
 # QL_DIR is where `npm install -g @whyour/qinglong` put the panel.
 if [ -z "$QL_DIR" ]; then
@@ -85,14 +108,16 @@ while true; do
       echo "qinglong-launcher: log rotated" >> "$LOG_FILE"
     fi
   fi
-  echo "qinglong-launcher: starting qinglong on :5700 (fast-fail streak $FAIL_COUNT)" >> "$LOG_FILE"
+  echo "qinglong-launcher: starting qinglong on :5700 (fail streak $FAIL_COUNT)" >> "$LOG_FILE"
   START_TS="$(date +%s)"
+  LISTENED=0
   qinglong >> "$LOG_FILE" 2>&1 &
   QL_PID=$!
   # Wait up to 60s for the panel to listen, so success is visible in the log.
   for _i in $(seq 1 60); do
     if curl -fs -o /dev/null http://localhost:5700/ 2>/dev/null; then
       echo "qinglong-launcher: panel listening on :5700" >> "$LOG_FILE"
+      LISTENED=1
       break
     fi
     kill -0 "$QL_PID" 2>/dev/null || break
@@ -101,10 +126,12 @@ while true; do
   wait "$QL_PID"
   EXIT_CODE=$?
   ELAPSED=$(( $(date +%s) - START_TS ))
-  if [ "$ELAPSED" -lt 10 ]; then
-    FAIL_COUNT=$((FAIL_COUNT + 1))
-  else
+  # Fix 5: only reset the streak if the panel actually listened and stayed
+  # up 60s+. A 14s run that exits non-zero is still a failure, not a success.
+  if [ "$LISTENED" -eq 1 ] && [ "$ELAPSED" -ge 60 ]; then
     FAIL_COUNT=0
+  else
+    FAIL_COUNT=$((FAIL_COUNT + 1))
   fi
   if [ "$FAIL_COUNT" -ge 5 ]; then
     SLEEP_SECS=60
